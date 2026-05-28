@@ -1,16 +1,5 @@
 from ..blackboard.blackboard import Blackboard
 
-WAYPOINTS = [
-    (1.0,  0.0),
-    (1.0,  1.0),
-    (0.0,  1.0),
-    (-1.0, 1.0),
-    (-1.0, 0.0),
-    (-1.0,-1.0),
-    (0.0, -1.0),
-    (1.0, -1.0),
-]
-
 
 class SearchState:
     def __init__(self):
@@ -27,14 +16,14 @@ class SearchState:
         self._send_waypoint()
 
     def tick(self, bb: Blackboard, logger) -> None:
-        pass  # 웨이포인트 전진은 _on_wp_reached 콜백에서 처리
+        pass  
 
-    def _on_wp_reached(self, ok: bool):
-        self._wp_idx = (self._wp_idx + 1) % len(WAYPOINTS)
+    def _on_waypoint_reached(self, ok: bool):
+        self._wp_idx = (self._wp_idx + 1) % len(self._bb.search.search_waypoints)
         self._send_waypoint()
 
     def _send_waypoint(self) -> None:
-        wp = WAYPOINTS[self._wp_idx]
+        wp = self._bb.search.search_waypoints[self._wp_idx]
         self._bb.current_goal = wp
         self._logger.info(f"[SEARCH] 웨이포인트 {self._wp_idx}: {wp}")
-        self._send_nav_goal(*wp, self._on_wp_reached)
+        self._send_nav_goal(*wp, self._on_waypoint_reached)

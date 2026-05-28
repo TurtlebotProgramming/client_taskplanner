@@ -1,3 +1,10 @@
-/**/
-ros__parameters: 
-  GOAL_TOLERANCE: 0.15
+turtlebot_fsm:
+  ros__parameters:
+    ui2taskplanner_topic: '/ui_msg'
+    odom_topic: '/odom'
+    detection_topic: '/detection'
+    vision2taskplanner_topic: '/vision2taskplanner'
+    gripper_service: '/gripper'
+    navigate_to_pose: '/navigate_to_pose'
+    goal_tolerance: 5.0          # cm
+    deliver_position: [0.0, 0.0]
