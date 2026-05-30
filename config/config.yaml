@@ -6,5 +6,12 @@ turtlebot_fsm:
     vision2taskplanner_topic: '/vision2taskplanner'
     gripper_service: '/gripper'
     navigate_to_pose: '/navigate_to_pose'
+
     goal_tolerance: 5.0          # cm
-    deliver_position: [0.0, 0.0]
+    deliver_position: [0.3, 0.75]
+
+    gripper_open_angle: 0.0        # servo angle for open
+    gripper_close_angle: 90.0      # servo angle for close
+
+    MX28_link_up_angle: 0.0              # servo angle for link up
+    MX28_link_down_angle: 90.0           # servo angle for link down

@@ -4,9 +4,7 @@ from turtlebot_interfaces.srv import Gripper
 
 def send_nav_goal(nav_client, logger, x: float, y: float, done_cb=None):
     if not nav_client.server_is_ready():
-        logger.warn("[NAV] 서버 없음")
-        if done_cb is not None:
-            done_cb(False)
+        logger.warn("[NAV] 서버 없음 - 대기 중")
         return
     goal = NavigateToPose.Goal()
     goal.pose.header.frame_id = 'map'

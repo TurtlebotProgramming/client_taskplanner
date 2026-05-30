@@ -23,7 +23,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'turtlebot_fsm = core.node.fsm:main',
+            'turtlebot_fsm = client_taskplanner.node.fsm:main',
         ],
     },
 )

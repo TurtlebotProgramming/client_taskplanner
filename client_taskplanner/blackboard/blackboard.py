@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple
 
 
-_SEARCH_WAYPOINTS = [(0, 0), (10, 10), (20, 20), (30, 30)]
+_SEARCH_WAYPOINTS = [(-0.1555812507867813, -0.4232494533061981, 0)] # x,y,z
 
 
 @dataclass
@@ -14,7 +14,7 @@ class Config:
     gripper_service: str = '/gripper'
     navigate_to_pose: str = '/navigate_to_pose'
     goal_tolerance: float = 0.05
-    deliver_position: tuple = (0.0, 0.0)
+    deliver_position: tuple = (0.6, 0.75)
 
 
 @dataclass
@@ -55,13 +55,6 @@ class Blackboard:
     robot_x: float = 0.0
     robot_y: float = 0.0
     robot_yaw: float = 0.0
-
-    # 경로 (미터 단위 waypoint 목록)
-    path: List[Tuple[float, float]] = field(default_factory=list)
-
-    # 속도 명령 출력
-    cmd_linear_x: float = 0.0
-    cmd_angular_z: float = 0.0
 
     # 현재 목표 좌표
     current_goal: object = None
