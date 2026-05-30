@@ -14,19 +14,11 @@ from turtlebot_interfaces.msg import Ui2Taskplanner
 from turtlebot_interfaces.msg import Refiner2taskplanner
 
 
-# ─────────────────────────────────────────────────────────────
-# Util
-# ─────────────────────────────────────────────────────────────
-
 def quaternion_to_yaw(q) -> float:
     siny = 2.0 * (q.w * q.z + q.x * q.y)
     cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
     return math.atan2(siny, cosy)
 
-
-# ─────────────────────────────────────────────────────────────
-# Config
-# ─────────────────────────────────────────────────────────────
 
 class Config:
     def __init__(self):
@@ -40,10 +32,6 @@ class Config:
         self.navigate_to_pose = "/navigate_to_pose"
 
 
-# ─────────────────────────────────────────────────────────────
-# FSM Node
-# ─────────────────────────────────────────────────────────────
-
 class TurtlebotFSM(Node):
 
     def __init__(self):
@@ -51,11 +39,8 @@ class TurtlebotFSM(Node):
 
         self.config = Config()
 
-        # 전체 FSM 상태
         self._state = "IDLE"
-
-        # deliver 내부 상태
-        self.state_deliver = "SearchToGo"
+        self.state_deliver = "RoomMove"
 
         self._load_params()
 
@@ -64,30 +49,78 @@ class TurtlebotFSM(Node):
         self.deliver_flag = False
         self.putback_flag = False
 
-        # Refiner 값
+        # Refiner object 위치
         self.object_x = None
         self.object_y = None
 
-        # Odom 값
+        # Odom 현재 위치
         self.robot_x = 0.0
         self.robot_y = 0.0
         self.robot_yaw = 0.0
 
-        # Nav2 goal 중복 전송 방지
+        # Nav2 중복 goal 방지
         self.nav_running = False
 
-        # Action client
-        self.nav_client = ActionClient(self, NavigateToPose, self.config.navigate_to_pose)
+        # 방 목록: 실제 좌표로 수정해서 쓰면 됨
+        self.rooms = [
+            {
+                "name": "Room1",
+                "x": 0.7946606874465942,
+                "y": -0.04718535393476486,
+                "qz": -0.002080774840971265,
+                "qw": 0.9999978351856874,
+            },
+            {
+                "name": "Room2",
+                "x": 0.737676739692688,
+                "y": 0.6202588081359863,
+                "qz": 0.3836786258025893,
+                "qw": 0.9234666816416479,
+            },
+            {
+                "name": "Room3",
+                "x": 0.092291921377182,
+                "y": 0.571383535861969,
+                "qz": 0.7025614486148799,
+                "qw": 0.7116230820597105,
+            },
+        ]
 
-        # Publisher
-        self.cmd_pub = self.create_publisher(Twist, self.config.cmd_vel_topic, 10)
+        self.room_index = 0
 
-        # Subscriber
-        self.ui_sub = self.create_subscription(Ui2Taskplanner, self.config.ui_topic, self._ui_callback, 10)
-        self.refiner_sub = self.create_subscription(Refiner2taskplanner, self.config.refiner_topic, self._refiner_callback, 10)
-        self.odom_sub = self.create_subscription(Odometry, self.config.odom_topic, self._odom_callback, 10)
+        self.nav_client = ActionClient(
+            self,
+            NavigateToPose,
+            self.config.navigate_to_pose
+        )
 
-        # Timer
+        self.cmd_pub = self.create_publisher(
+            Twist,
+            self.config.cmd_vel_topic,
+            10
+        )
+
+        self.ui_sub = self.create_subscription(
+            Ui2Taskplanner,
+            self.config.ui_topic,
+            self._ui_callback,
+            10
+        )
+
+        self.refiner_sub = self.create_subscription(
+            Refiner2taskplanner,
+            self.config.refiner_topic,
+            self._refiner_callback,
+            10
+        )
+
+        self.odom_sub = self.create_subscription(
+            Odometry,
+            self.config.odom_topic,
+            self._odom_callback,
+            10
+        )
+
         timer_period = 1.0 / self.config.hz
         self.create_timer(timer_period, self._step)
 
@@ -100,10 +133,6 @@ class TurtlebotFSM(Node):
         self.get_logger().info(f"cmd_vel_topic: {self.config.cmd_vel_topic}")
         self.get_logger().info(f"navigate_to_pose: {self.config.navigate_to_pose}")
 
-    # ─────────────────────────────────────────────────────────
-    # Parameter
-    # ─────────────────────────────────────────────────────────
-
     def _load_params(self):
         self.declare_parameter("hz", 10.0)
 
@@ -114,9 +143,7 @@ class TurtlebotFSM(Node):
 
         self.declare_parameter("action.navigate_to_pose", "/navigate_to_pose")
 
-        self.config.hz = float(
-            self.get_parameter("hz").value
-        )
+        self.config.hz = float(self.get_parameter("hz").value)
 
         if self.config.hz <= 0.0:
             self.get_logger().warn(
@@ -124,29 +151,13 @@ class TurtlebotFSM(Node):
             )
             self.config.hz = 10.0
 
-        self.config.ui_topic = str(
-            self.get_parameter("topic.ui").value
-        )
-
-        self.config.refiner_topic = str(
-            self.get_parameter("topic.refiner").value
-        )
-
-        self.config.odom_topic = str(
-            self.get_parameter("topic.odom").value
-        )
-
-        self.config.cmd_vel_topic = str(
-            self.get_parameter("topic.cmd_vel").value
-        )
-
+        self.config.ui_topic = str(self.get_parameter("topic.ui").value)
+        self.config.refiner_topic = str(self.get_parameter("topic.refiner").value)
+        self.config.odom_topic = str(self.get_parameter("topic.odom").value)
+        self.config.cmd_vel_topic = str(self.get_parameter("topic.cmd_vel").value)
         self.config.navigate_to_pose = str(
             self.get_parameter("action.navigate_to_pose").value
         )
-
-    # ─────────────────────────────────────────────────────────
-    # Callbacks
-    # ─────────────────────────────────────────────────────────
 
     def _ui_callback(self, msg: Ui2Taskplanner):
         self.deliver_object_id = msg.deliver_object_id
@@ -162,11 +173,15 @@ class TurtlebotFSM(Node):
 
         if self.deliver_flag and not self.putback_flag:
             self._state = "DELIVER"
-            self.state_deliver = "SearchToGo"
+            self.state_deliver = "RoomMove"
+
+            self.room_index = 0
+            self.object_x = None
+            self.object_y = None
             self.nav_running = False
 
             self.get_logger().info("[FSM] IDLE → DELIVER")
-            self.get_logger().info("[DELIVER] Start → SearchToGo")
+            self.get_logger().info("[DELIVER] Start → RoomMove")
 
         elif self.putback_flag:
             self._state = "PUT_BACK"
@@ -190,10 +205,6 @@ class TurtlebotFSM(Node):
         self.robot_x = msg.pose.pose.position.x
         self.robot_y = msg.pose.pose.position.y
         self.robot_yaw = quaternion_to_yaw(msg.pose.pose.orientation)
-
-    # ─────────────────────────────────────────────────────────
-    # Nav2
-    # ─────────────────────────────────────────────────────────
 
     def send_goal(self, x, y, qz, qw):
         if self.nav_running:
@@ -230,11 +241,18 @@ class TurtlebotFSM(Node):
         future.add_done_callback(self._goal_response_callback)
 
     def _goal_response_callback(self, future):
-        goal_handle = future.result()
+        try:
+            goal_handle = future.result()
+        except Exception as e:
+            self.get_logger().error(f"Goal response error: {e}")
+            self.nav_running = False
+            self._after_room_move()
+            return
 
         if not goal_handle.accepted:
             self.get_logger().error("Goal rejected")
             self.nav_running = False
+            self._after_room_move()
             return
 
         self.get_logger().info("Goal accepted")
@@ -243,8 +261,12 @@ class TurtlebotFSM(Node):
         result_future.add_done_callback(self._result_callback)
 
     def _result_callback(self, future):
-        result = future.result()
-        status = result.status
+        try:
+            result = future.result()
+            status = result.status
+        except Exception as e:
+            self.get_logger().error(f"Navigation result error: {e}")
+            status = None
 
         self.nav_running = False
 
@@ -255,14 +277,23 @@ class TurtlebotFSM(Node):
                 f"Navigation failed or finished with status: {status}"
             )
 
-        # 성공/실패 상관없이 SearchToGo 끝나면 Around로 이동
-        if self.state_deliver == "SearchToGo":
-            self.state_deliver = "Around"
-            self.get_logger().info("[FSM] SearchToGo → Around")
+        self._after_room_move()
 
-    # ─────────────────────────────────────────────────────────
-    # cmd_vel
-    # ─────────────────────────────────────────────────────────
+    def _after_room_move(self):
+        if self._state != "DELIVER":
+            return
+
+        if self.state_deliver != "RoomMove":
+            return
+
+        if self.room_index >= len(self.rooms):
+            self.get_logger().warn("[DELIVER] invalid room_index")
+            self._state = "IDLE"
+            return
+
+        room_name = self.rooms[self.room_index]["name"]
+        self.state_deliver = "CheckObject"
+        self.get_logger().info(f"[FSM] {room_name} 이동 완료 → CheckObject")
 
     def publish_cmd(self, linear_x, angular_z):
         msg = Twist()
@@ -280,13 +311,8 @@ class TurtlebotFSM(Node):
     def stop_robot(self):
         self.publish_cmd(0.0, 0.0)
 
-    # ─────────────────────────────────────────────────────────
-    # FSM Tick
-    # ─────────────────────────────────────────────────────────
-
     def _step(self):
         match self._state:
-
             case "IDLE":
                 return
 
@@ -308,43 +334,68 @@ class TurtlebotFSM(Node):
 
         match self.state_deliver:
 
-            case "SearchToGo":
+            case "RoomMove":
+                if self.room_index >= len(self.rooms):
+                    self.stop_robot()
+                    self.get_logger().warn("[DELIVER] 모든 방 탐색 실패")
+                    self._state = "IDLE"
+                    return
+
+                room = self.rooms[self.room_index]
+
                 self.get_logger().info(
-                    f"[SearchToGo] Searching object id={self.deliver_object_id}"
+                    f"[RoomMove] Going to {room['name']}"
                 )
 
                 self.send_goal(
-                    x=-0.8116069436073303,
-                    y=-0.10050240904092789,
-                    qz=0.13871737311756624,
-                    qw=0.9903320101841412
+                    x=room["x"],
+                    y=room["y"],
+                    qz=room["qz"],
+                    qw=room["qw"],
                 )
 
-            case "Room1":
-                self.get_logger().info("[Room1] Going to Room1")
-                self.send_goal(
-                    x=-0.8116069436073303,
-                    y=-0.10050240904092789,
-                    qz=0.13871737311756624,
-                    qw=0.9903320101841412
+            case "CheckObject":
+                room = self.rooms[self.room_index]
+                room_name = room["name"]
+
+                if self.object_x is not None and self.object_y is not None:
+                    self.get_logger().info(
+                        f"[CheckObject] {room_name}에서 물체 발견 → GoToObject"
+                    )
+                    self.state_deliver = "GoToObject"
+                    return
+
+                self.get_logger().warn(
+                    f"[CheckObject] {room_name}에 물체 없음 → 다음 방"
                 )
 
-            case "Room2":
-                self.get_logger().info("[Room2] Going to Room2")
-                self.send_goal(
-                    x=-0.8116069436073303,
-                    y=-0.10050240904092789,
-                    qz=0.13871737311756624,
-                    qw=0.9903320101841412
-                )
-            
-            case "Room3":
-                self.get_logger().info("[Room3] Going to Room3")
-                self.send_goal(
-                    x=-0.8116069436073303,
-                    y=-0.10050240904092789,
-                    qz=0.13871737311756624,
-                    qw=0.9903320101841412
+                self.room_index += 1
+                self.object_x = None
+                self.object_y = None
+
+                if self.room_index >= len(self.rooms):
+                    self.stop_robot()
+                    self.get_logger().warn("[DELIVER] 모든 방에서 물체 못 찾음")
+                    self._state = "IDLE"
+                    return
+
+                next_room = self.rooms[self.room_index]["name"]
+                self.state_deliver = "RoomMove"
+                self.get_logger().info(f"[FSM] 다음 방 이동 → {next_room}")
+
+            case "GoToObject":
+                if self.object_x is None or self.object_y is None:
+                    self.get_logger().warn(
+                        "[GoToObject] Object position unknown"
+                    )
+                    return
+
+                self.stop_robot()
+
+                self.get_logger().info(
+                    f"[GoToObject] object=({self.object_x:.3f}, {self.object_y:.3f}), "
+                    f"robot=({self.robot_x:.3f}, {self.robot_y:.3f}, "
+                    f"yaw={self.robot_yaw:.3f})"
                 )
 
             case _:
@@ -353,12 +404,9 @@ class TurtlebotFSM(Node):
                 )
 
     def _step_put_back(self):
+        self.stop_robot()
         self.get_logger().info("[PUT_BACK] not implemented yet")
 
-
-# ─────────────────────────────────────────────────────────────
-# main
-# ─────────────────────────────────────────────────────────────
 
 def main(args=None):
     rclpy.init(args=args)
