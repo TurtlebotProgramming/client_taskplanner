@@ -11,6 +11,7 @@
   <depend>nav_msgs</depend>
   <depend>nav2_msgs</depend>
   <depend>geometry_msgs</depend>
+  <depend>std_msgs</depend>
   <depend>turtlebot_interfaces</depend>
   <depend>client_vision_interfaces</depend>
   <depend>ament_index_python</depend>
