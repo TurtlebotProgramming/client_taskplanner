@@ -12,6 +12,7 @@ from nav_msgs.msg import Odometry
 
 from turtlebot_interfaces.msg import Ui2Taskplanner
 from turtlebot_interfaces.msg import Refiner2taskplanner
+from client_vision_interfaces.msg import TurtlebotDetection
 
 
 def quaternion_to_yaw(q) -> float:
@@ -26,6 +27,7 @@ class Config:
 
         self.ui_topic = "/ui_msg"
         self.refiner_topic = "/refiner"
+        self.detection_topic = "/detection"
         self.odom_topic = "/odom"
         self.cmd_vel_topic = "/cmd_vel"
 
@@ -52,6 +54,9 @@ class TurtlebotFSM(Node):
         # Refiner object 위치
         self.object_x = None
         self.object_y = None
+
+        # Detection 값
+        self.bbox_center_x = None
 
         # Odom 현재 위치
         self.robot_x = 0.0
@@ -114,6 +119,7 @@ class TurtlebotFSM(Node):
             10
         )
 
+        self.detection_sub = self.create_subscription(TurtlebotDetection, self.config.detection_topic, self._detection_callback, 1)
         self.odom_sub = self.create_subscription(
             Odometry,
             self.config.odom_topic,
@@ -200,6 +206,22 @@ class TurtlebotFSM(Node):
             f"[REFINER] object_x={self.object_x:.3f}, "
             f"object_y={self.object_y:.3f}"
         )
+
+    def _detection_callback(self, msg: TurtlebotDetection):
+        if self.deliver_object_id is None or not msg.class_ids:
+            self.bbox_center_x = None
+            return
+
+        candidates = [
+            i for i, cid in enumerate(msg.class_ids)
+            if cid == self.deliver_object_id
+        ]
+        if not candidates:
+            self.bbox_center_x = None
+            return
+
+        best_idx = max(candidates, key=lambda i: msg.score[i])
+        self.bbox_center_x = (msg.x1[best_idx] + msg.x2[best_idx]) / 2.0
 
     def _odom_callback(self, msg: Odometry):
         self.robot_x = msg.pose.pose.position.x
@@ -384,19 +406,30 @@ class TurtlebotFSM(Node):
                 self.get_logger().info(f"[FSM] 다음 방 이동 → {next_room}")
 
             case "GoToObject":
-                if self.object_x is None or self.object_y is None:
-                    self.get_logger().warn(
-                        "[GoToObject] Object position unknown"
-                    )
+                IMAGE_CENTER_X  = 320.0
+                ALIGN_THRESH_PX = 20.0
+                LINEAR_V        = 0.1
+                ANGULAR_V       = 0.3
+                STOP_DIST       = 0.1
+
+                if self.bbox_center_x is None:
+                    self.stop_robot()
                     return
 
-                self.stop_robot()
+                pixel_error = self.bbox_center_x - IMAGE_CENTER_X
 
-                self.get_logger().info(
-                    f"[GoToObject] object=({self.object_x:.3f}, {self.object_y:.3f}), "
-                    f"robot=({self.robot_x:.3f}, {self.robot_y:.3f}, "
-                    f"yaw={self.robot_yaw:.3f})"
-                )
+                if abs(pixel_error) > ALIGN_THRESH_PX:
+                    sign = 1.0 if pixel_error > 0 else -1.0
+                    self.publish_cmd(0.0, sign * ANGULAR_V)
+                    return
+
+                # 정렬 완료
+                if self.object_x is not None and self.object_x <= STOP_DIST:
+                    self.stop_robot()
+                    self.state_deliver = "Grip"
+                    self.get_logger().info("[go_to_grip] Arrived → Grip")
+                else:
+                    self.publish_cmd(LINEAR_V, 0.0)
 
             case _:
                 self.get_logger().warn(
