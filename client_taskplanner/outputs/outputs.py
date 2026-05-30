@@ -11,6 +11,7 @@ def send_nav_goal(nav_client, logger, x: float, y: float, done_cb=None):
     goal.pose.pose.position.x = x
     goal.pose.pose.position.y = y
     goal.pose.pose.orientation.w = 1.0
+    logger.info("[NAV] ========================출발=========================")
     future = nav_client.send_goal_async(goal)
     if done_cb is not None:
         def _on_goal(gf):
