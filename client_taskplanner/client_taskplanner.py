@@ -75,8 +75,8 @@ class TurtlebotFSM(Node):
 
         # bbox 기준에 도달한 뒤, 물체별 추가 전진 시간(sec)
         self.final_forward_time_by_class = {
-            0: 1.0,  # can
-            1: 1.0,  # bottle
+            0: 0.5,  # can
+            1: 0.3,  # bottle
             2: 1.0,  # box
         }
         self.default_final_forward_time = 0.6
@@ -110,11 +110,12 @@ class TurtlebotFSM(Node):
         self.rooms = [
             {
                 "name": "Room1",
-                "x": 0.7011054158210754,
-                "y": 0.13435018062591553,
-                "qz": -0.009558199717154485,
-                "qw": 0.9999543193657233,
+                "x": 0.6842660903930664,
+                "y": -0.1297750174999237,
+                "qz": 0.004451037360519763,
+                "qw": 0.9999900940841441,
             },
+
             {
                 "name": "Room2",
                 "x": 0.9548425674438477,
@@ -151,11 +152,11 @@ class TurtlebotFSM(Node):
 
         # Room1, Room3에서 물체를 잡은 뒤 Nav2 BackUp 설정
         self.backup_after_grip_distance_by_room = {
-            0: 0.25,  # Room1에서 잡았을 때 25cm 후진
-            2: 0.35,  # Room3에서 잡았을 때 35cm 후진
+            0: 0.85,  # Room1에서 잡았을 때 25cm 후진
+            2: 0.85,  # Room3에서 잡았을 때 35cm 후진
         }
         self.default_backup_after_grip_distance = 0.25
-        self.backup_after_grip_speed = 0.08
+        self.backup_after_grip_speed = 0.2
 
         # 배달 장소 목표 위치
         self.delivery_goal = {
@@ -546,7 +547,7 @@ class TurtlebotFSM(Node):
 
         goal_msg.speed = float(speed)
 
-        goal_msg.time_allowance.sec = 5
+        goal_msg.time_allowance.sec = 10
         goal_msg.time_allowance.nanosec = 0
 
         self.backup_running = True
@@ -601,18 +602,26 @@ class TurtlebotFSM(Node):
 
         if status == GoalStatus.STATUS_SUCCEEDED:
             self.get_logger().info("[BACKUP] succeeded")
-        else:
-            self.get_logger().warn(
-                f"[BACKUP] failed or finished with status: {status}"
-            )
 
-        if self.backup_next_state is not None:
-            next_state = self.backup_next_state
-        else:
-            next_state = "RoomMove"
+            if self.backup_next_state is not None:
+                next_state = self.backup_next_state
+            else:
+                next_state = "RoomMove"
 
-        self.backup_next_state = None
-        self.state_deliver = next_state
+            self.backup_next_state = None
+            self.state_deliver = next_state
+
+            self.get_logger().info(f"[FSM] BackUp 완료 → {next_state}")
+            return
+
+        self.get_logger().warn(
+            f"[BACKUP] failed or finished with status: {status}"
+        )
+
+        # 실패했으면 다음 상태로 넘기지 말고 현재 상태 유지
+        # 단, backup_running은 False로 풀렸으므로 다음 step에서 다시 BackUp 재시도됨
+        self.get_logger().warn("[FSM] BackUp 실패 → 현재 상태에서 재시도")
+        return
 
         self.get_logger().info(f"[FSM] BackUp 완료 → {next_state}")
 
@@ -939,14 +948,14 @@ class TurtlebotFSM(Node):
                 )
 
             case "BackupAfterGrip":
-                self.stop_robot()
-
                 backup_distance = self.backup_after_grip_distance_by_room.get(
                     self.found_room_index,
                     self.default_backup_after_grip_distance
                 )
 
                 if not self.backup_running:
+                    self.stop_robot()
+
                     self.get_logger().info(
                         f"[BackupAfterGrip] Nav2 BackUp start, "
                         f"room_index={self.found_room_index}, "
